@@ -1,6 +1,3 @@
-import math
-import sys
-from dataclasses import dataclass
 from typing import Literal
 
 import torch
@@ -350,7 +347,7 @@ class GPT2(nn.Module):
             if do_sample:
                 top_k_probs, top_k_ids = torch.topk(
                     input=next_probs, k=top_k, dim=-1
-                )  # (batch_size, top_k)
+                )  # (batch_size, top_k). Tot k values aren't sorted.
 
                 idx = torch.multinomial(input=top_k_probs, num_samples=1)
                 next_token = torch.gather(
