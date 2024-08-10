@@ -17,6 +17,9 @@ mmlu:
 gpt2-infer:
 		$(PY) llm/models/gpt/inference.py
 
+gpt2-infer-prof:
+		$(PY) llm/models/gpt/inference_profiling.py
+
 gpt2-exp-place:
 		$(PY) llm/models/gpt/exp1_place.py
 
@@ -24,10 +27,15 @@ gpt2-exp-contiguity:
 		$(PY) llm/models/gpt/exp2_contiguity.py
 
 
+# Llama2
 llama2-token:
 		$(PY) llm/models/llama/tokenizer.py
 		
-
 llama2-infer:
-		$(PY) llm/models/llama/moinfer.py
+		$(PY) llm/models/llama/inference_.py
 
+inf:
+		$(PY) llm/models/llama/umar/inference.py
+
+infm:
+		$(PY) llm/models/llama/inference.py
