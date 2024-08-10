@@ -172,8 +172,22 @@ class GPT2Block(nn.Module):
 
 class GPT2(nn.Module):
 
-    def __init__(self, config: GPT2Config):
+    model_type: Literal["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"] = "gpt2"
+
+    def __init__(
+        self,
+        model_type: Literal["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"] = "gpt2",
+    ):
         super().__init__()
+
+        self.model_type = model_type
+
+        config = {
+            "gpt2": GPT2Config(),
+            "gpt2-medium": GPT2Config(n_embd=1024, n_head=16, n_layer=24),
+            "gpt2-large": GPT2Config(n_embd=1280, n_head=20, n_layer=36),
+            "gpt2-xl": GPT2Config(n_embd=1600, n_head=25, n_layer=48),
+        }[model_type]
 
         self.config = config
 
@@ -216,8 +230,6 @@ class GPT2(nn.Module):
             input_ids (torch.Tensor): A tensor of shape (batch_size, sequence_length) and dtype torch.int64 (LongTensor).
 
         """
-        batch_size, sequence_length = input_ids.size()  # (B, T)
-
         _, sequence_length = input_ids.size()
 
         assert (
@@ -257,20 +269,10 @@ class GPT2(nn.Module):
         return logits
 
     @classmethod
-    def from_pretrained(
-        cls,
-        model_type: Literal["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"] = "gpt2",
-    ):
+    def from_pretrained(cls):
 
-        config = {
-            "gpt2": GPT2Config(),
-            "gpt2-medium": GPT2Config(n_embd=1024, n_head=16, n_layer=24),
-            "gpt2-large": GPT2Config(n_embd=1280, n_head=20, n_layer=36),
-            "gpt2-xl": GPT2Config(n_embd=1600, n_head=25, n_layer=48),
-        }[model_type]
-
-        model_hf = GPT2LMHeadModel.from_pretrained(model_type)
-        model = cls(config)
+        model = cls()
+        model_hf = GPT2LMHeadModel.from_pretrained(model.model_type)
 
         sd = model.state_dict()
         sd_hf = model_hf.state_dict()
@@ -296,70 +298,3 @@ class GPT2(nn.Module):
                     value.copy_(value_to_copy)
 
         return model
-
-    # https://github.com/huggingface/transformers/blob/main/src/transformers/generation/utils.py#L1577
-    @classmethod
-    @torch.inference_mode()
-    def generate(
-        cls,
-        input_ids,
-        max_length=30,
-        max_new_tokens=None,
-        num_return_sequences=1,
-        do_sample=True,
-        top_k=50,
-    ):
-        """
-            Generate a sequence of tokens using the model.
-            1. Initial Input: The process begins with an initial sequence of tokens represented by input_ids, which typically has a shape (batch_size, sequence_length).
-            2. Token-by-Token Generation: The model generates new tokens one at a time. After generating each token, it appends the token to the input sequence and uses the updated sequence to generate the next token.
-            3. Sequence Continuation: This process continues until the sequence reaches a specified maximum length, a stop token is generated, or another stopping criterion is met.
-
-        Args:
-            input_ids (torch.Tensor): A tensor of shape (batch_size, sequence_length) and dtype torch.int64 (LongTensor).
-            max_length (int): The maximum length of the sequence to be generated.
-            num_return_sequences (int): The number of independently computed returned sequences for each element in the batch.
-            do_sample (bool): If set to False greedy decoding is used. Otherwise, sampling is used.
-            top_k (int): The number of highest probability vocabulary tokens to keep for top-k-filter
-
-        Returns:
-            torch.Tensor: A tensor of shape (batch_size, max_length) and dtype torch.int64 (LongTensor).
-
-        """
-        # max_new_token = max_new_token or max_length # refactor this later
-        # s.t.
-        # max_new_tokens + input_ids.shape[1] = max_length
-
-        input_len = input_ids.shape[1]  # (batch_size, sequence_length)
-
-        model = cls.from_pretrained("gpt2")
-        model.eval()
-
-        device = input_ids.device
-        model.to(device)
-
-        x = input_ids
-        while input_ids.shape[1] < max_length:
-            logits = model(input_ids)  # (batch_size, sequence_length, vocab_size)
-            next_logits = logits[:, -1, :]  # (batch_size, vocab_size)
-            next_probs = F.softmax(next_logits, dim=-1)  # (batch_size, vocab_size)
-
-            if do_sample:
-                top_k_probs, top_k_ids = torch.topk(
-                    input=next_probs, k=top_k, dim=-1
-                )  # (batch_size, top_k). Tot k values aren't sorted.
-
-                idx = torch.multinomial(input=top_k_probs, num_samples=1)
-                next_token = torch.gather(
-                    input=top_k_ids, dim=-1, index=idx
-                )  # (batch_size, 1)
-
-            else:
-                next_token = torch.argmax(next_probs, dim=-1)  # (batch_size,)
-                next_token = next_token.unsqueeze(-1)  # (batch_size, 1)
-
-            input_ids = torch.cat(
-                (input_ids, next_token), dim=-1
-            )  # (batch_size, sequence_length + 1)
-
-        return input_ids

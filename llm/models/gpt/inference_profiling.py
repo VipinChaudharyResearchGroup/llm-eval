@@ -1,7 +1,7 @@
 import tiktoken
 import torch
 from GPT2 import GPT2
-from helpers.profiling import experiment
+from helpers.profiling import profiler
 from init import init
 from text_generation import generate
 
@@ -19,7 +19,7 @@ def generate_input_ids(prompt: str, batch_size: int):
     return input_ids
 
 
-@experiment(experiment_name="contiguous", num_experiments=10, save_profile=True)
+@profiler
 def main():
 
     input_ids = generate_input_ids(
@@ -47,4 +47,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    results, profile = main()
+    print(results)
+    print(profile)

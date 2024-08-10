@@ -1,36 +1,42 @@
 import tiktoken
 import torch
 from GPT2 import GPT2
-from GPT2Config import GPT2Config
-from helpers.profiling import experiment, profiler
 from init import init
+from text_generation import generate
 
 conf = init(seed=42)
 
 enc = tiktoken.get_encoding("gpt2")
 
-batch_size = 5
-max_length = 30
 
-prompt = "Hello, I'm a language model,"
-tokens = enc.encode(prompt)  # (sequence_length,)
-tokens = torch.tensor(tokens, dtype=torch.long)
-tokens = tokens.unsqueeze(0).repeat(batch_size, 1)  # (batch_size, sequence_length)
+def generate_input_ids(prompt: str, batch_size: int):
+    tokens = enc.encode(prompt)  # (sequence_length,)
+    tokens = torch.tensor(tokens, dtype=torch.long, device=conf.device)
+    input_ids = tokens.unsqueeze(0).repeat(
+        batch_size, 1
+    )  # (batch_size, sequence_length)
+    return input_ids
 
-input_ids = tokens.to(conf.device)
 
-config = GPT2Config()
-model = GPT2(config)
-
-output_ids = model.generate(
-    input_ids=input_ids,
-    max_length=30,
-    num_return_sequences=1,
-    do_sample=True,
-    top_k=50,
+input_ids = generate_input_ids(
+    "Simply put, the theory of relativity states that", batch_size=2
 )
 
-for i in range(batch_size):
-    tokens = output_ids[i, :].tolist()
-    decoded = enc.decode(tokens)
-    print(">", decoded)
+model = GPT2("gpt2").from_pretrained()
+
+output_ids = generate(
+    model=model,
+    input_ids=input_ids,
+    method="top_k",
+    # method="top_p",
+    # method="greedy",
+    top_k=50,
+    # top_p=0.9,
+    # max_length=30,
+    max_new_tokens=128,
+    num_return_sequences=2,
+    # temperature=0.6,
+)
+
+for decoded_output in enc.decode_batch(output_ids.tolist()):
+    print("\n", decoded_output)
