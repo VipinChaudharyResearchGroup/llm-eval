@@ -34,8 +34,10 @@ llama2-token:
 llama2-infer:
 		$(PY) llm/models/llama/inference_.py
 
-inf:
-		$(PY) llm/models/llama/umar/inference.py
 
 infm:
 		$(PY) llm/models/llama/inference.py
+
+# Olmo
+olmo-hf:
+		$(PY) llm/models/olmo/hf.py

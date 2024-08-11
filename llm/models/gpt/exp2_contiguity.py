@@ -43,7 +43,8 @@ def main():
     )
 
     for decoded_output in enc.decode_batch(output_ids.tolist()):
-        print("\n", decoded_output)
+        print("-" * 50, "\n")
+        print(decoded_output)
 
 
 if __name__ == "__main__":

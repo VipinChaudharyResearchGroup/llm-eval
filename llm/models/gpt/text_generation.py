@@ -38,11 +38,11 @@ def generate(
     # s.t.
     # max_new_tokens + input_ids.shape[1] = max_length
 
-    input_len = input_ids.shape[1]
-    num_new_tokens = max(max_new_tokens, max_length - input_len)
-
     model.eval()
     model.to(input_ids.device)
+
+    input_len = input_ids.shape[1]
+    num_new_tokens = max(max_new_tokens, max_length - input_len)
 
     for _ in range(num_new_tokens):
 

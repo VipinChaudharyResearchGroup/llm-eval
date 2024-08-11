@@ -6,7 +6,7 @@ from text_generation import generate
 
 conf = init(seed=42)
 
-enc = tiktoken.get_encoding("gpt2")
+enc = tiktoken.get_encoding("gpt2")  # "r50k_base"
 
 
 def generate_input_ids(prompt: str, batch_size: int):
@@ -39,4 +39,5 @@ output_ids = generate(
 )
 
 for decoded_output in enc.decode_batch(output_ids.tolist()):
-    print("\n", decoded_output)
+    print("-" * 50, "\n")
+    print(decoded_output)
