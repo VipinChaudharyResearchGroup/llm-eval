@@ -28,14 +28,7 @@ gpt2-exp-contiguity:
 
 
 # Llama2
-llama2-token:
-		$(PY) llm/models/llama/tokenizer.py
-		
 llama2-infer:
-		$(PY) llm/models/llama/inference_.py
-
-
-infm:
 		$(PY) llm/models/llama/inference.py
 
 # Olmo

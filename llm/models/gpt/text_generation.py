@@ -5,6 +5,44 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def select_next_token(
+    logits: torch.Tensor,
+    method: Literal["greedy", "top_k", "top_p"] = "greedy",
+    temperature: float = 1.0,
+    top_k: int = 50,
+    top_p: float = 0.9,
+) -> torch.Tensor:
+    next_logits = logits[:, -1, :]
+
+    if method == "greedy":
+        _, next_token = next_logits.max(dim=-1, keepdim=True)
+
+    else:
+        next_logits /= temperature  # default temperature = 1.0
+        next_probs = F.softmax(next_logits, dim=-1)
+
+        if method == "top_k":
+            probs, probs_indices = next_probs.topk(k=top_k, dim=-1)
+
+        elif method == "top_p":
+
+            probs, probs_indices = next_probs.sort(descending=True, dim=-1)
+            cumulative_probs = probs.cumsum(dim=-1)
+            mask = cumulative_probs - probs > top_p
+            probs[mask] = 0.0
+            probs /= probs.sum(dim=-1, keepdim=True)
+
+        else:
+            raise ValueError(
+                "Invalid method or missing required argument (top_p or top_k)."
+            )
+
+        idx_sample = torch.multinomial(input=probs, num_samples=1)
+
+        next_token = torch.gather(input=probs_indices, dim=-1, index=idx_sample)
+
+    return next_token
+
 @torch.inference_mode()
 def generate(
     model: nn.Module,
@@ -49,46 +87,7 @@ def generate(
         logits = model(input_ids)  # (batch_size, sequence_length, vocab_size)
         # next_logits = logits[:, -1, :]  # (batch_size, vocab_size)
 
-        next_logits = logits[:, -1, :]  # (batch_size, vocab_size)
-
-        if temperature != 1.0:
-            next_logits /= temperature
-
-        next_probs = F.softmax(next_logits, dim=-1)  # (batch_size, vocab_size)
-        # print(next_probs.sum(dim=-1))   # sum of probabilities should be 1
-
-        if method == "greedy":
-            # torch.max returns (values, indices)
-            # using keepdim=True, no need to unsqueeze the tensor
-            # _, next_token = torch.max(next_probs, dim=-1, keepdim=True) # the same functionality
-            _, next_token = next_probs.max(dim=-1, keepdim=True)
-
-        else:
-            if method == "top_k":
-                # torch.topk returns (values, indices)
-                # probs, probs_indices = torch.topk(input=next_probs, k=top_k, dim=-1)
-                probs, probs_indices = next_probs.topk(k=top_k, dim=-1)
-
-            elif method == "top_p":
-
-                probs, probs_indices = next_probs.sort(
-                    descending=True, dim=-1
-                )  # (batch_size, vocab_size)
-                cumulative_probs = probs.cumsum(dim=-1)  # (batch_size, vocab_size)
-                mask = cumulative_probs - probs > top_p
-                probs[mask] = 0.0
-                # should be normalized since torch.multinomial expects normalized probabilities
-                # probs.div_(probs.sum(dim = -1, keepdim = True) + 1e-6)
-                probs.div_(probs.sum(dim=-1, keepdim=True))
-
-            else:
-                raise ValueError(
-                    "Invalid method or missing required argument (top_p or top_k)."
-                )
-
-            idx_sample = torch.multinomial(input=probs, num_samples=1)
-
-            next_token = torch.gather(input=probs_indices, dim=-1, index=idx_sample)
+        next_token = select_next_token(logits, method, temperature, top_k, top_p)
 
         input_ids = torch.cat(
             [input_ids, next_token], dim=-1
