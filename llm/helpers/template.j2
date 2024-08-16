@@ -1,0 +1,12 @@
+{% for item in data %}
+Index: {{ item.index }}
+Input Prompt: |
+  {{ item.input_prompt }}
+
+Response: |
+  {{ item.response }}
+
+Error: {{ item.error }}
+
+---
+{% endfor %}
