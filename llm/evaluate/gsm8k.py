@@ -235,15 +235,19 @@ def evaluate(
 
     unsuccessful_responses_dict = {
         "index": [],
-        "input_prompt": [],
+        "question": [],
         "response": [],
+        "ds_ans": [],
+        "ds_ans_parsed": [],
         "error": [],
     }
 
+    cot_prompt = concat_cot_prompt("the next question comes here", n_shots)
+
     for i in range(num_questions) if iterations is None else range(iterations):
 
-        question, answer_truth = gsm_eval[i]["question"], gsm_eval[i]["answer"]
-        answer_truth = answer_truth.split(" ")[-1]
+        question, answer_truth_ = gsm_eval[i]["question"], gsm_eval[i]["answer"]
+        answer_truth = answer_truth_.split(" ")[-1]
 
         prompt = concat_cot_prompt(question, n_shots)
 
@@ -277,8 +281,10 @@ def evaluate(
             except ValueError as e:
                 print(f"Error: Value Error in iteration {i} \n")
                 unsuccessful_responses_dict["index"].append(i)
-                unsuccessful_responses_dict["input_prompt"].append(prompt)
+                unsuccessful_responses_dict["question"].append(prompt)
                 unsuccessful_responses_dict["response"].append(response)
+                unsuccessful_responses_dict["ds_ans"].append(answer_truth_)
+                unsuccessful_responses_dict["ds_ans_parsed"].append(answer_truth)
                 unsuccessful_responses_dict["error"].append(
                     "Cannot convert true answer"
                 )
@@ -286,8 +292,11 @@ def evaluate(
         else:
             print(f"Error: Value Error in iteration {i} \n")
             unsuccessful_responses_dict["index"].append(i)
-            unsuccessful_responses_dict["input_prompt"].append(prompt)
+            unsuccessful_responses_dict["question"].append(prompt)
             unsuccessful_responses_dict["response"].append(response)
+            unsuccessful_responses_dict["ds_ans"].append(answer_truth_)
+            unsuccessful_responses_dict["ds_ans_parsed"].append(answer_truth)
+
             unsuccessful_responses_dict["error"].append(final_answer_prediction)
 
             if debug:
@@ -307,6 +316,14 @@ def evaluate(
     print(f"Accuracy: {accuracy}")
 
     if save_response:
+
+        unsuccessful_responses_dict["index"].append(-1)
+        unsuccessful_responses_dict["question"].append(cot_prompt)
+        unsuccessful_responses_dict["response"].append("NA")
+        unsuccessful_responses_dict["ds_ans"].append("NA")
+        unsuccessful_responses_dict["ds_ans_parsed"].append("NA")
+        unsuccessful_responses_dict["error"].append("NA")
+
         df_success = pd.DataFrame(output_dict)
         df_success.to_csv(f"{save_response}/successful_responses.csv", index=False)
 
@@ -381,6 +398,8 @@ if __name__ == "__main__":
         "mistralai/Mistral-7B-Instruct-v0.1",
         "mistralai/Mistral-7B-Instruct-v0.2",
         "mistralai/Mistral-7B-Instruct-v0.3",
+        "meta-llama/Llama-2-13b-hf", # 2 GPUs
+        "meta-llama/Llama-2-13b-chat-hf", # 2 GPUs
     ]
 
     for checkpoint in checkpoints:
