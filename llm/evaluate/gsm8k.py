@@ -1,116 +1,45 @@
+import argparse
+import csv
 import json
 import logging
 import re
 from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
 import torch
 from datasets import concatenate_datasets, load_dataset
 from init import init
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-answer_trigger = "Let's break it down."
-final_answer_trigger = "Therefore, the final answer is"
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Checkpoints to evaluate")
+    parser.add_argument(
+        "--checkpoints",
+        nargs="+",
+        default=["meta-llama/Llama-2-7b-hf"],
+        help="List of checkpoints to use",
+    )
+    return parser.parse_args()
 
 
-def generate_template(question, chain, answer):
-    question.append(
-        "There are 15 trees in the grove. "
-        "Grove workers will plant trees in the grove today. "
-        "After they are done, there will be 21 trees. "
-        "How many trees did the grove workers plant today?"
-    )
-    chain.append(
-        "There are 15 trees originally. "
-        "Then there were 21 trees after some more were planted. "
-        "So there must have been 21 - 15 = 6."
-    )
-    answer.append("6")
+def create_cot_prompt(
+    json_file, n_shots=8, reasoning_trigger="", final_answer_trigger="", idle_trigger=""
+):
 
-    question.append(
-        "If there are 3 cars in the parking lot and 2 more cars arrive, "
-        "how many cars are in the parking lot?"
-    )
-    chain.append("There are originally 3 cars. 2 more cars arrive. 3 + 2 = 5.")
-    answer.append("5")
+    assert n_shots <= 8, "n_shots should be less than or equal to 8"
 
-    question.append(
-        "Leah had 32 chocolates and her sister had 42. If they ate 35, "
-        "how many pieces do they have left in total?"
-    )
-    chain.append(
-        "Originally, Leah had 32 chocolates. "
-        "Her sister had 42. So in total they had 32 + 42 = 74. "
-        "After eating 35, they had 74 - 35 = 39."
-    )
-    answer.append("39")
+    questions = []
+    chains = []
+    answers = []
 
-    question.append(
-        "Jason had 20 lollipops. He gave Denny some lollipops. Now Jason "
-        "has 12 lollipops. How many lollipops did Jason give to Denny?"
-    )
-    chain.append(
-        "Jason started with 20 lollipops. Then he had 12 after giving some "
-        "to Denny. So he gave Denny 20 - 12 = 8."
-    )
-    answer.append("8")
+    with open(json_file, "r") as file:
+        data = json.load(file)
 
-    question.append(
-        "Shawn has five toys. For Christmas, he got two toys each from his "
-        "mom and dad. How many toys does he have now?"
-    )
-    chain.append(
-        "Shawn started with 5 toys. If he got 2 toys each from his mom and "
-        "dad, then that is 4 more toys. 5 + 4 = 9."
-    )
-    answer.append("9")
-
-    question.append(
-        "There were nine computers in the server room. Five more computers "
-        "were installed each day, from monday to thursday. "
-        "How many computers are now in the server room?"
-    )
-    chain.append(
-        "There were originally 9 computers. For each of 4 days, 5 more "
-        "computers were added. So 5 * 4 = 20 computers were added. "
-        "9 + 20 is 29."
-    )
-    answer.append("29")
-
-    question.append(
-        "Michael had 58 golf balls. On tuesday, he lost 23 golf balls. On "
-        "wednesday, he lost 2 more. "
-        "How many golf balls did he have at the end of wednesday?"
-    )
-    chain.append(
-        "Michael started with 58 golf balls. After losing 23 on tuesday, "
-        "he had 58 - 23 = 35. After losing 2 more, "
-        "he had 35 - 2 = 33 golf balls."
-    )
-    answer.append("33")
-
-    question.append(
-        "Olivia has $23. She bought five bagels for $3 each. "
-        "How much money does she have left?"
-    )
-    chain.append(
-        "Olivia had 23 dollars. "
-        "5 bagels for 3 dollars each will be 5 x 3 = 15 dollars. "
-        "So she has 23 - 15 dollars left. 23 - 15 is 8."
-    )
-    answer.append("8")
-
-    return question, chain, answer
-
-
-def create_cot_prompt(n_shots=8):
-
-    assert n_shots <= 8, "n_shot should be less than or equal to 8"
-
-    questions, chains, answers = [], [], []
-
-    questions, chains, answers = generate_template(questions, chains, answers)
+    for item in data:
+        questions.append(item["question"])
+        chains.append(" ".join(item["reasoning"]))
+        answers.append(item["answer"])
 
     questions, chains, answers = (
         questions[:n_shots],
@@ -119,8 +48,20 @@ def create_cot_prompt(n_shots=8):
     )
 
     cot_prompt = ""
+
     for i in range(n_shots):
-        cot_prompt += f"Q: {questions[i]}\nA: {answer_trigger} {chains[i]} {final_answer_trigger} {answers[i]}.\n\n"
+        parts = []
+        if reasoning_trigger:
+            parts.append(reasoning_trigger)
+        parts.append(chains[i])
+        if final_answer_trigger:
+            parts.append(final_answer_trigger)
+        parts.append(answers[i])
+        if idle_trigger:
+            parts.append(idle_trigger)
+
+        response = " ".join(parts)
+        cot_prompt += f"Q: {questions[i]}\nA: {response}.\n\n"
 
     return cot_prompt
 
@@ -138,8 +79,7 @@ def load_gsm8k(subset="test"):
         return gsm_eval
 
 
-def concat_cot_prompt(question, n_shots=8):
-    cot_prompt = create_cot_prompt(n_shots)
+def concat_cot_prompt(cot_prompt, question):
     prompt = cot_prompt + f"Q: {question}\nA:"
     return prompt
 
@@ -151,23 +91,20 @@ def load_model(checkpoint):
     )
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-    # for key in tokenizer.special_tokens_map:
-    #     print(f"{key}: {tokenizer.special_tokens_map[key]}")
-    #     print(f"ID: {tokenizer.convert_tokens_to_ids(tokenizer.special_tokens_map[key])}")
-
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token_id is not None:
             tokenizer.pad_token_id = tokenizer.eos_token_id
     else:
         tokenizer.pad_token_id = 0
 
-    # gen_conf = model.generation_config
-    # gen_conf = gen_conf.to_dict()
-    # for key in gen_conf:
-    #     print(f"{key}: {gen_conf[key]}")
-
     if model.generation_config.pad_token_id is None:
         model.generation_config.pad_token_id = tokenizer.pad_token_id
+
+    model.generation_config.temperature = None
+    model.generation_config.top_p = None
+    model.generation_config.top_k = None
+    model.generation_config.penalty_alpha = None
+    model.generation_config.do_sample = False
 
     model.eval()
 
@@ -193,26 +130,72 @@ def generate_response(
     return response, input_prompt_len
 
 
-def clean_response(response, remove_input_prompt=True):
+def clean_response(response, final_answer_trigger="therefore"):
 
-    if remove_input_prompt:
-        first_response = response.split(final_answer_trigger)
+    response_ = response.lower().strip().split("\n")[0]
 
-        if len(first_response) < 2:
-            return f"Error: {final_answer_trigger} not found in response"
+    first_response = response_.split(final_answer_trigger.lower())
 
-        first_response = first_response[1].split("\n")[0].strip()[:-1]
+    if len(first_response) > 1:  # final answer trigger found
+        expected = first_response[1].split("\n")[0].strip()[:-1]
+    else:
+        expected = response_.split("therefore")[-1]
 
-        reg_rum_pattern = r"(\d+(\.\d+)?)"
+    expected = expected.replace("$", "").replace(",", "")
 
-        match = re.search(reg_rum_pattern, first_response)
+    ## TIME
+    if "pm" or "am" in expected:
+        time_match = re.search(r"(\d{1,2}:\d{2} (?:am|pm))", expected, re.IGNORECASE)
+        if time_match:
+            time_str = time_match.group(1)
 
-        if match:
-            num_str = match.group(1)
-            num = float(num_str) if "." in num_str else int(num_str)
-            return num
-        else:
-            return f"Error: Number not found in response"
+            time, _ = time_str.split()
+            hours, minutes = map(int, time.split(":"))
+            decimal_minutes = minutes / 60.0
+
+            time_float = hours + decimal_minutes
+
+            return round(time_float, 2)
+    ## TIME
+
+    numbers = re.findall(r"-?\d+\.?\d*", expected)
+
+    parsed_numbers = [float(num) if "." in num else int(num) for num in numbers]
+
+    num_parsed = len(parsed_numbers)
+
+    if num_parsed > 0:
+        return parsed_numbers[-1]
+    else:
+        exception_candidates = [
+            "there is no",
+            "there are no",
+            "there will be no",
+            "there will not be",
+            "there will not be",
+        ]
+
+        for candidate in exception_candidates:
+            if candidate in expected:
+                return 0
+
+        cle = response.split("Q:")[0].split("\n")
+        l = len(cle)
+
+        for i in range(l):
+            if len(cle[l - i - 1]) > 0:
+                x = cle[l - i - 1].lower().split(final_answer_trigger.lower())
+                expected = x[-1].replace("$", "").replace(",", "")
+
+                numbers = re.findall(r"-?\d+\.?\d*", expected)
+                parsed_numbers = [
+                    float(num) if "." in num else int(num) for num in numbers
+                ]
+                num_parsed = len(parsed_numbers)
+                if num_parsed > 0:
+                    return parsed_numbers[-1]
+
+        return None
 
 
 def evaluate(
@@ -223,33 +206,51 @@ def evaluate(
     subset="test",
     iterations=None,
     save_response=False,
-    debug=False,
 ):
 
-    readable_responses, corrects, input_length_total, input_length_avg = 0, 0, 0, 0
+    # Triggers
+    # reasoning_trigger = "Let's think step by step."
+    reasoning_trigger = "Let's break it down."
+
+    final_answer_trigger = "The answer is"
+    # final_answer_trigger = "Therefore, the final answer is"
+
+    # idle_trigger = "Let's go to the next question"
+
+    cot_prompt = create_cot_prompt(
+        "templates/gsm8k_cot.json",
+        n_shots=n_shots,
+        reasoning_trigger=reasoning_trigger,
+        final_answer_trigger=final_answer_trigger,
+        # idle_trigger=idle_trigger,
+    )
+
+    readable_responses, corrects, input_length_total, input_length_avg = 0, 0, 0, 0.0
 
     gsm_eval = load_gsm8k(subset=subset)
     num_questions = len(gsm_eval)
 
-    output_dict = {"index": [], "question": [], "answer": [], "prediction": []}
+    csv_file_path_successful = f"{save_response}/successful_responses.csv"
+    csv_file_path_unsuccessful = f"{save_response}/unsuccessful_responses.csv"
 
-    unsuccessful_responses_dict = {
-        "index": [],
-        "question": [],
-        "response": [],
-        "ds_ans": [],
-        "ds_ans_parsed": [],
-        "error": [],
-    }
+    columns = ["index", "question", "resp", "resp_parsed", "ans", "ans_parsed"]
 
-    cot_prompt = concat_cot_prompt("the next question comes here", n_shots)
+    with open(csv_file_path_successful, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(columns + ["correct"])
+        writer.writerow([-1, cot_prompt, "NA", "NA", "NA", "NA", "NA"])
+
+    with open(csv_file_path_unsuccessful, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(columns + ["error"])
+        writer.writerow([-1, cot_prompt, "NA", "NA", "NA", "NA", "NA"])
 
     for i in range(num_questions) if iterations is None else range(iterations):
 
         question, answer_truth_ = gsm_eval[i]["question"], gsm_eval[i]["answer"]
-        answer_truth = answer_truth_.split(" ")[-1]
+        answer_truth = answer_truth_.split(" ")[-1].replace(",", "")
 
-        prompt = concat_cot_prompt(question, n_shots)
+        prompt = concat_cot_prompt(cot_prompt, question)
 
         print(f"Iteration, {i} \n")
 
@@ -259,9 +260,10 @@ def evaluate(
 
         final_answer_prediction = clean_response(response)
 
-        if isinstance(final_answer_prediction, str) == False:
+        if isinstance(final_answer_prediction, (int, float)):
 
             try:
+
                 final_answer_truth = (
                     float(answer_truth) if "." in answer_truth else int(answer_truth)
                 )
@@ -270,44 +272,58 @@ def evaluate(
                     corrects += 1
 
                 if save_response:
-                    output_dict["index"].append(i)
-                    output_dict["question"].append(question)
-                    output_dict["answer"].append(final_answer_truth)
-                    output_dict["prediction"].append(final_answer_prediction)
+                    with open(csv_file_path_successful, mode="a", newline="") as file:
+                        writer = csv.writer(file)
+
+                        writer.writerow(
+                            [
+                                i,
+                                question,
+                                response,
+                                final_answer_prediction,
+                                answer_truth_,
+                                final_answer_truth,
+                                final_answer_prediction == final_answer_truth,
+                            ]
+                        )
 
                 readable_responses += 1
                 input_length_total += input_prompt_len
 
             except ValueError as e:
                 print(f"Error: Value Error in iteration {i} \n")
-                unsuccessful_responses_dict["index"].append(i)
-                unsuccessful_responses_dict["question"].append(prompt)
-                unsuccessful_responses_dict["response"].append(response)
-                unsuccessful_responses_dict["ds_ans"].append(answer_truth_)
-                unsuccessful_responses_dict["ds_ans_parsed"].append(answer_truth)
-                unsuccessful_responses_dict["error"].append(
-                    "Cannot convert true answer"
-                )
+                with open(csv_file_path_unsuccessful, mode="a", newline="") as file:
+                    writer = csv.writer(file)
+                    writer.writerow(
+                        [
+                            i,
+                            question,
+                            response,
+                            final_answer_prediction,
+                            answer_truth_,
+                            answer_truth,
+                            f"Cannot convert true answer, {e}",
+                        ]
+                    )
 
         else:
             print(f"Error: Value Error in iteration {i} \n")
-            unsuccessful_responses_dict["index"].append(i)
-            unsuccessful_responses_dict["question"].append(prompt)
-            unsuccessful_responses_dict["response"].append(response)
-            unsuccessful_responses_dict["ds_ans"].append(answer_truth_)
-            unsuccessful_responses_dict["ds_ans_parsed"].append(answer_truth)
-
-            unsuccessful_responses_dict["error"].append(final_answer_prediction)
-
-            if debug:
-                print(f"Inference prompt: {prompt} \n")
-                print(f"Response: {response} \n")
-                print(f"Predicted answer: {final_answer_prediction} \n")
-                print(f"True answer: {final_answer_truth} \n")
+            with open(csv_file_path_unsuccessful, mode="a", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(
+                    [
+                        i,
+                        question,
+                        response,
+                        final_answer_prediction,
+                        answer_truth_,
+                        answer_truth,
+                        f"Error in parsing response",
+                    ]
+                )
 
     if readable_responses == 0:
-        accuracy = 0
-        input_length_avg = 0
+        accuracy, input_length_avg = 0, 0
 
     else:
         accuracy = corrects / readable_responses
@@ -315,24 +331,7 @@ def evaluate(
 
     print(f"Accuracy: {accuracy}")
 
-    if save_response:
-
-        unsuccessful_responses_dict["index"].append(-1)
-        unsuccessful_responses_dict["question"].append(cot_prompt)
-        unsuccessful_responses_dict["response"].append("NA")
-        unsuccessful_responses_dict["ds_ans"].append("NA")
-        unsuccessful_responses_dict["ds_ans_parsed"].append("NA")
-        unsuccessful_responses_dict["error"].append("NA")
-
-        df_success = pd.DataFrame(output_dict)
-        df_success.to_csv(f"{save_response}/successful_responses.csv", index=False)
-
-        df_unsuccessful = pd.DataFrame(unsuccessful_responses_dict)
-        df_unsuccessful.to_csv(
-            f"{save_response}/unsuccessful_responses.csv", index=False
-        )
-
-    return accuracy, readable_responses, input_length_avg
+    return accuracy, readable_responses, input_length_avg, num_questions
 
 
 def evaluate_init(checkpoint):
@@ -340,22 +339,26 @@ def evaluate_init(checkpoint):
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     checkpoint_path = checkpoint.replace("/", "_")
-    output_dir = Path(rf"output/{checkpoint_path}_{now}")
+    output_dir = Path(rf"output/DRAFT_{checkpoint_path}_{now}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     generate_kwargs = {
         "num_return_sequences": 1,
         "max_new_tokens": 256,
+        "do_sample": True,
+        "temperature": 0.6,
+        "top_k": 50,
     }
+    n_shots = 8
 
     model, tokenizer = load_model(checkpoint)
 
-    accuracy, readable_responses, input_length_avg = evaluate(
+    accuracy, readable_responses, input_length_avg, num_questions = evaluate(
         model,
         tokenizer,
         generate_kwargs,
-        n_shots=8,
-        subset="test",
+        n_shots=n_shots,
+        # subset="test",
         iterations=None,
         # iterations=1,
         save_response=output_dir,
@@ -368,6 +371,8 @@ def evaluate_init(checkpoint):
         "model": checkpoint,
         "accuracy": accuracy,
         "num_responses": readable_responses,
+        "num_questions": num_questions,
+        "num_shots": n_shots,
         "generate_kwargs": generate_kwargs,
         "config": config,
         "input_tokens_avg": input_length_avg,
@@ -379,6 +384,20 @@ def evaluate_init(checkpoint):
 
 if __name__ == "__main__":
 
+    args = parse_args()
+    checkpoints = args.checkpoints
+    # checkpoints = [
+    #     "meta-llama/Llama-2-7b-hf",
+    #     "meta-llama/Llama-2-7b-chat-hf",
+    #     "meta-llama/Meta-Llama-3-8B",
+    #     "meta-llama/Meta-Llama-3-8B-Instruct",
+    #     "mistralai/Mistral-7B-v0.1",
+    #     "mistralai/Mistral-7B-Instruct-v0.1",
+    #     "mistralai/Mistral-7B-Instruct-v0.2",
+    #     "mistralai/Mistral-7B-Instruct-v0.3",
+    #     "allenai/OLMo-1.7-7B-hf",
+    # ]
+
     config = init()
     print(config.device)
     logging.basicConfig(
@@ -387,20 +406,6 @@ if __name__ == "__main__":
         level=logging.ERROR,
         format="%(asctime)s %(levelname)s %(message)s",
     )
-
-    checkpoints = [
-        "allenai/OLMo-1.7-7B-hf",
-        "meta-llama/Llama-2-7b-hf",
-        "meta-llama/Llama-2-7b-chat-hf",
-        "meta-llama/Meta-Llama-3-8B",
-        "meta-llama/Meta-Llama-3-8B-Instruct",
-        "mistralai/Mistral-7B-v0.1",
-        "mistralai/Mistral-7B-Instruct-v0.1",
-        "mistralai/Mistral-7B-Instruct-v0.2",
-        "mistralai/Mistral-7B-Instruct-v0.3",
-        "meta-llama/Llama-2-13b-hf", # 2 GPUs
-        "meta-llama/Llama-2-13b-chat-hf", # 2 GPUs
-    ]
 
     for checkpoint in checkpoints:
         try:
