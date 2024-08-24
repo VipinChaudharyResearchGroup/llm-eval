@@ -9,8 +9,9 @@ import torch
 from datasets import concatenate_datasets, load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from init import init
 from evaluate.gsm8k_parse_ans import clean_response
+from init import init
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Checkpoints to evaluate")
@@ -277,9 +278,9 @@ def evaluate_init(checkpoint):
     generate_kwargs = {
         "num_return_sequences": 1,
         "max_new_tokens": 256,
-        "do_sample": True,
-        "temperature": 0.6,
-        "top_k": 50,
+        "do_sample": False,
+        # "temperature": 0.6,
+        # "top_k": 50,
     }
     n_shots = 8
 
@@ -314,8 +315,7 @@ def evaluate_init(checkpoint):
         json.dump(results, f)
 
 
-if __name__ == "__main__":
-
+def main():
     args = parse_args()
     checkpoints = args.checkpoints
     # checkpoints = [
@@ -347,3 +347,7 @@ if __name__ == "__main__":
             logging.error(f"Error: in {checkpoint} \n {e}")
         finally:
             torch.cuda.empty_cache()
+
+
+if __name__ == "__main__":
+    main()
