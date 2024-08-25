@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
+from accelerate import Accelerator
 from datasets import concatenate_datasets, load_dataset
 from evaluate.gsm8k_parse_ans import clean_response
 from helpers.profiling import profiler
@@ -24,8 +25,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def create_cot_prompt(
-    json_file, n_shots=8, reasoning_trigger="", final_answer_trigger="", idle_trigger=""
+def create_cot_tokens(
+    json_file,
+    tokenizer,
+    n_shots=8,
+    reasoning_trigger="",
+    final_answer_trigger="",
+    idle_trigger="",
 ):
 
     assert n_shots <= 8, "n_shots should be less than or equal to 8"
@@ -64,7 +70,11 @@ def create_cot_prompt(
         response = " ".join(parts)
         cot_prompt += f"Q: {questions[i]}\nA: {response}.\n\n"
 
-    return cot_prompt
+    tokenized_cot = tokenizer(
+        cot_prompt, padding=False, add_special_tokens=False, return_tensors="pt"
+    )
+
+    return cot_prompt, tokenized_cot
 
 
 def load_gsm8k(subset="test"):
@@ -80,17 +90,25 @@ def load_gsm8k(subset="test"):
         return gsm_eval
 
 
-def concat_cot_prompt(cot_prompt, question):
-    prompt = cot_prompt + f"Q: {question}\nA:"
-    return prompt
+def concat_cot_tokens(tokenizer, tokenized_cot, question):
+
+    wrapped_question = f"Q: {question}\nA:"
+    tokenized_question = tokenizer(wrapped_question, return_tensors="pt")
+
+    combined_tokens = {
+        key: torch.cat([tokenized_cot[key], tokenized_question[key]], dim=1)
+        for key in ["input_ids", "attention_mask"]
+    }
+
+    return combined_tokens
 
 
-def load_model(checkpoint):
+def load_model(checkpoint, accelerator):
 
-    model = AutoModelForCausalLM.from_pretrained(
-        checkpoint, device_map="auto", torch_dtype=torch.float16
-    )
+    model = AutoModelForCausalLM.from_pretrained(checkpoint, torch_dtype=torch.float16)
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+
+    model = accelerator.prepare(model)
 
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token_id is not None:
@@ -113,15 +131,17 @@ def load_model(checkpoint):
 
 
 def generate_response(
-    prompt, model, tokenizer, generate_kwargs, remove_input_prompt=True
+    prompt, model, tokenizer, accelerator, generate_kwargs, remove_input_prompt=True
 ):
-    input = tokenizer(
-        prompt, padding=False, add_special_tokens=True, return_tensors="pt"
-    ).to(model.device)
-    output = model.generate(**input, **generate_kwargs)
+
+    inputs = {k: v.to(accelerator.device) for k, v in prompt.items()}
+
+    with torch.inference_mode():
+        output = model.generate(**inputs, **generate_kwargs)
+
     output = output[0]
 
-    input_prompt_len = input["input_ids"].shape[1]
+    input_prompt_len = prompt["input_ids"].shape[1]
 
     if remove_input_prompt:
         output = output[input_prompt_len:]
@@ -134,6 +154,7 @@ def generate_response(
 def evaluate(
     model,
     tokenizer,
+    accelerator,
     generate_kwargs,
     n_shots=8,
     subset="test",
@@ -150,8 +171,9 @@ def evaluate(
 
     # idle_trigger = "Let's go to the next question"
 
-    cot_prompt = create_cot_prompt(
+    cot_prompt, tokenized_cot = create_cot_tokens(
         "templates/gsm8k_cot.json",
+        tokenizer,
         n_shots=n_shots,
         reasoning_trigger=reasoning_trigger,
         final_answer_trigger=final_answer_trigger,
@@ -183,12 +205,12 @@ def evaluate(
         question, answer_truth_ = gsm_eval[i]["question"], gsm_eval[i]["answer"]
         answer_truth = answer_truth_.split(" ")[-1].replace(",", "")
 
-        prompt = concat_cot_prompt(cot_prompt, question)
+        prompt = concat_cot_tokens(tokenizer, tokenized_cot, question)
 
         print(f"Iteration, {i} \n")
 
         response, input_prompt_len = generate_response(
-            prompt, model, tokenizer, generate_kwargs
+            prompt, model, tokenizer, accelerator, generate_kwargs
         )
 
         final_answer_prediction = clean_response(response)
@@ -272,7 +294,7 @@ def evaluate_init(checkpoint):
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     checkpoint_path = checkpoint.replace("/", "_")
-    output_dir = Path(rf"output/DRAFT_{checkpoint_path}_{now}")
+    output_dir = Path(rf"output/ACC_{checkpoint_path}_{now}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     generate_kwargs = {
@@ -284,11 +306,13 @@ def evaluate_init(checkpoint):
     }
     n_shots = 8
 
-    model, tokenizer = load_model(checkpoint)
+    accelerator = Accelerator()
+    model, tokenizer = load_model(checkpoint, accelerator)
 
     accuracy, readable_responses, input_length_avg, num_questions = evaluate(
         model,
         tokenizer,
+        accelerator,
         generate_kwargs,
         n_shots=n_shots,
         # subset="test",

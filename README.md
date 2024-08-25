@@ -2,15 +2,8 @@
 
 ## GSM8K Evaluation
 
-script:`llm/evaluate/gsm8k.py`
-
-
-
-## PyTroch
-
-- using **in-place** methods performs better than using **out-of-place** methods. `output/experiments/{inplace, outplace}`.
-
-- **Contiguous** tensors performs better than non-contiguous. `output/experiments/{contiguity}`. (using `torch.contiguous()` and `torch.view()`)
+- `llm/evaluate/gsm8k.py` runs the evaluation on single GPU.
+- `llm/evaluate/gsm8k_gpus` runs the evaluation on multiple GPUs.
 
 
 ## KV cache
@@ -42,4 +35,4 @@ script:`llm/evaluate/gsm8k.py`
 
 
 ## References
-Template has been taken from [here](https://github.com/Guangxuan-Xiao/GSM8K-eval).
+CoT template has been taken from
