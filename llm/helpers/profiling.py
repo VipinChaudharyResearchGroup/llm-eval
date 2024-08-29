@@ -154,7 +154,7 @@ def experiment(experiment_name="", num_experiments=10, save_profile=True):
                 with open(output_file, "w") as fp:
                     json.dump(results, fp)
 
-            return return_values
+            return results
 
         return wrapper
 
