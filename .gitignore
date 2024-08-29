@@ -143,3 +143,13 @@ dmypy.json
 # Result of experimets
 
 output/mmlu/**/*.csv
+
+output/
+
+*.db
+
+### HPC
+
+*.job
+*.hpc.out
+*.hpc.err

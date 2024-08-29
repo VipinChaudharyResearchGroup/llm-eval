@@ -9,7 +9,7 @@ import torch
 from accelerate import Accelerator
 from datasets import concatenate_datasets, load_dataset
 from evaluate.gsm8k_parse_ans import clean_response
-from helpers.profiling import profiler
+from helpers.profiling import experiment
 from init import init
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -289,7 +289,7 @@ def evaluate(
     return accuracy, readable_responses, input_length_avg, num_questions
 
 
-def evaluate_init(checkpoint, seed=None):
+def evaluate_init(checkpoint, output_dir, seed=None):
 
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -317,7 +317,7 @@ def evaluate_init(checkpoint, seed=None):
         n_shots=n_shots,
         # subset="test",
         # iterations=None,
-        # iterations=10,
+        # iterations=2,
         save_response=output_dir,
     )
 
@@ -336,8 +336,7 @@ def evaluate_init(checkpoint, seed=None):
         "seed": seed,
     }
 
-    with open(output_dir / "results.json", "w") as f:
-        json.dump(results, f)
+    return results
 
 
 def main(seed=None):
@@ -359,30 +358,40 @@ def main(seed=None):
     #     "allenai/OLMo-1.7-7B-hf",
     # ]
 
-    logging.basicConfig(
-        filename="./logs/running.log",
-        filemode="a",
-        level=logging.ERROR,
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
+    # logging.basicConfig(
+    #     filename="./logs/running.log",
+    #     filemode="a",
+    #     level=logging.ERROR,
+    #     format="%(asctime)s %(levelname)s %(message)s",
+    # )
 
     for checkpoint in checkpoints:
         try:
             print(f"Running {checkpoint} \n")
-            evaluate_init(checkpoint, seed=seed)
+            now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+            checkpoint_path = checkpoint.replace("/", "_")
+            output_dir = Path(rf"output/GSM/multi_{checkpoint_path}_{now}")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            @experiment(
+                experiment_name=f"gsm8k_{checkpoint_path}",
+                num_experiments=1,
+                save_profile=False,
+            )
+            def experiment_main():
+                return evaluate_init(checkpoint, output_dir, seed=seed)
+
+            profile = experiment_main()
+
+            with open(output_dir / "results.json", "w") as f:
+                json.dump(profile, f)
+
         except Exception as e:
             logging.error(f"Error: in {checkpoint} \n {e}")
         finally:
             torch.cuda.empty_cache()
 
 
-# Single run, profiling
 if __name__ == "__main__":
-
-    @profiler
-    def profiling_main():
-        return main()
-
-    profile = profiling_main()
-
-    print(profile)
+    main()
