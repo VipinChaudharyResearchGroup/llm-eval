@@ -8,8 +8,8 @@ from pathlib import Path
 import torch
 from datasets import concatenate_datasets, load_dataset
 from evaluate.gsm8k_parse_ans import clean_response
-from init import init
 from helpers.profiling import profiler
+from init import init
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
