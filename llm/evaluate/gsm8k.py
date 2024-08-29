@@ -8,8 +8,8 @@ from pathlib import Path
 import torch
 from datasets import concatenate_datasets, load_dataset
 from evaluate.gsm8k_parse_ans import clean_response
-from helpers.profiling import profiler
 from init import init
+from helpers.profiling import profiler
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -267,12 +267,12 @@ def evaluate(
     return accuracy, readable_responses, input_length_avg, num_questions
 
 
-def evaluate_init(checkpoint):
+def evaluate_init(checkpoint, seed=None):
 
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     checkpoint_path = checkpoint.replace("/", "_")
-    output_dir = Path(rf"output/DRAFT_{checkpoint_path}_{now}")
+    output_dir = Path(rf"output/GSM/single_{checkpoint_path}_{now}")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     generate_kwargs = {
@@ -293,7 +293,7 @@ def evaluate_init(checkpoint):
         n_shots=n_shots,
         # subset="test",
         # iterations=None,
-        iterations=10,
+        # iterations=1,
         save_response=output_dir,
     )
 
@@ -309,14 +309,18 @@ def evaluate_init(checkpoint):
         "generate_kwargs": generate_kwargs,
         "config": config,
         "input_tokens_avg": input_length_avg,
+        "seed": seed,
     }
 
     with open(output_dir / "results.json", "w") as f:
         json.dump(results, f)
 
 
-@profiler
-def main():
+def main(seed=None):
+
+    config = init() if seed is None else init(seed=seed)
+    print(config.device)
+
     args = parse_args()
     checkpoints = args.checkpoints
     # checkpoints = [
@@ -331,8 +335,6 @@ def main():
     #     "allenai/OLMo-1.7-7B-hf",
     # ]
 
-    config = init()
-    print(config.device)
     logging.basicConfig(
         filename="./logs/running.log",
         filemode="a",
@@ -343,13 +345,20 @@ def main():
     for checkpoint in checkpoints:
         try:
             print(f"Running {checkpoint} \n")
-            evaluate_init(checkpoint)
+            evaluate_init(checkpoint, seed=seed)
         except Exception as e:
             logging.error(f"Error: in {checkpoint} \n {e}")
         finally:
             torch.cuda.empty_cache()
 
 
+# Single run, profiling
 if __name__ == "__main__":
-    _, profile = main()
+
+    @profiler
+    def profiling_main():
+        return main()
+
+    profile = profiling_main()
+
     print(profile)
