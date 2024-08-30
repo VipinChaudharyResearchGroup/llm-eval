@@ -128,7 +128,6 @@ def experiment(experiment_name="", num_experiments=10, save_profile=True):
                 return_values.append(return_value)
                 profiles.append(profile)
 
-            
             end_time = time.perf_counter()
             results = {
                 "experiment_time": round(end_time - begin_time, 3),

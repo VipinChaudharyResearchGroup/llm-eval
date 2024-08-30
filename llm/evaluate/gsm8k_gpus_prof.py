@@ -346,6 +346,9 @@ def main(seed=None):
     args = parse_args()
     checkpoints = args.checkpoints
     # checkpoints = [
+    #     "microsoft/Phi-3.5-mini-instruct",
+    #     "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    #     "meta-llama/Meta-Llama-3.1-8B-Instruct",
     #     "meta-llama/Llama-2-7b-hf",
     #     "meta-llama/Llama-2-7b-chat-hf",
     #     "meta-llama/Meta-Llama-3-8B",

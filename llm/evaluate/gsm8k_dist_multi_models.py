@@ -1,12 +1,3 @@
-import json
-
-import torch
-from accelerate import PartialState
-from accelerate.utils import gather_object
-from datasets import concatenate_datasets, load_dataset
-from torch.distributed.elastic.multiprocessing.errors import record
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from init import init
 import argparse
 import csv
 import json
@@ -15,11 +6,13 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-from accelerate import Accelerator
+from accelerate import Accelerator, PartialState
+from accelerate.utils import gather_object
 from datasets import concatenate_datasets, load_dataset
 from evaluate.gsm8k_parse_ans import clean_response
 from helpers.profiling import experiment
 from init import init
+from torch.distributed.elastic.multiprocessing.errors import record
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 

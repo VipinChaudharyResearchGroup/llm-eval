@@ -1,8 +1,9 @@
 import csv
 import json
+from typing import Literal
+
 import yaml
 from jinja2 import Template
-from typing import Literal
 
 
 def export_csv_data(
