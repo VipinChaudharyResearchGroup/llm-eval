@@ -289,7 +289,7 @@ def evaluate(
     return accuracy, readable_responses, input_length_avg, num_questions
 
 
-def evaluate_init(checkpoint, output_dir, seed=None):
+def evaluate_init(checkpoint, output_dir):
 
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
@@ -333,7 +333,6 @@ def evaluate_init(checkpoint, output_dir, seed=None):
         "generate_kwargs": generate_kwargs,
         "config": config,
         "input_tokens_avg": input_length_avg,
-        "seed": seed,
     }
 
     return results
@@ -358,12 +357,12 @@ def main(seed=None):
     #     "allenai/OLMo-1.7-7B-hf",
     # ]
 
-    # logging.basicConfig(
-    #     filename="./logs/running.log",
-    #     filemode="a",
-    #     level=logging.ERROR,
-    #     format="%(asctime)s %(levelname)s %(message)s",
-    # )
+    logging.basicConfig(
+        filename="./logs/running.log",
+        filemode="a",
+        level=logging.ERROR,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
 
     for checkpoint in checkpoints:
         try:
@@ -380,9 +379,11 @@ def main(seed=None):
                 save_profile=False,
             )
             def experiment_main():
-                return evaluate_init(checkpoint, output_dir, seed=seed)
+                return evaluate_init(checkpoint, output_dir)
 
             profile = experiment_main()
+
+            profile["seed"] = seed
 
             with open(output_dir / "results.json", "w") as f:
                 json.dump(profile, f)

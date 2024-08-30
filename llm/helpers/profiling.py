@@ -128,29 +128,28 @@ def experiment(experiment_name="", num_experiments=10, save_profile=True):
                 return_values.append(return_value)
                 profiles.append(profile)
 
-            if save_profile:
-                end_time = time.perf_counter()
+            
+            end_time = time.perf_counter()
+            results = {
+                "experiment_time": round(end_time - begin_time, 3),
+                "num_experiments": num_experiments,
+                "first_experiment": profiles[0],
+                "average_profile": {
+                    key: sum(
+                        float(re.findall(r"\d+\.?\d*", profile[key])[0])
+                        for profile in profiles
+                    )
+                    / num_experiments
+                    for key in profiles[0]
+                },
+                "profiles": profiles,
+                "return_values": return_values,
+            }
 
+            if save_profile:
                 output_dir = Path(rf"output/experiments/profiles")
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_file = output_dir / f"{experiment_name}_{now}.json"
-
-                results = {
-                    "experiment_time": round(end_time - begin_time, 3),
-                    "num_experiments": num_experiments,
-                    "first_experiment": profiles[0],
-                    "average_profile": {
-                        key: sum(
-                            float(re.findall(r"\d+\.?\d*", profile[key])[0])
-                            for profile in profiles
-                        )
-                        / num_experiments
-                        for key in profiles[0]
-                    },
-                    "profiles": profiles,
-                    "return_values": return_values,
-                }
-
                 with open(output_file, "w") as fp:
                     json.dump(results, fp)
 

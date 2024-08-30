@@ -267,7 +267,7 @@ def evaluate(
     return accuracy, readable_responses, input_length_avg, num_questions
 
 
-def evaluate_init(checkpoint, output_dir, seed=None):
+def evaluate_init(checkpoint, output_dir):
 
     generate_kwargs = {
         "num_return_sequences": 1,
@@ -303,7 +303,6 @@ def evaluate_init(checkpoint, output_dir, seed=None):
         "generate_kwargs": generate_kwargs,
         "config": config,
         "input_tokens_avg": input_length_avg,
-        "seed": seed,
     }
 
     return results
@@ -347,10 +346,10 @@ def main(seed=None):
             @experiment(
                 experiment_name=f"gsm8k_{checkpoint_path}",
                 num_experiments=1,
-                save_profile=True,
+                save_profile=False,
             )
             def experiment_main():
-                return evaluate_init(checkpoint, output_dir, seed=seed)
+                return evaluate_init(checkpoint, output_dir)
 
             profile = experiment_main()
 
