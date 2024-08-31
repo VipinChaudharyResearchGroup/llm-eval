@@ -164,11 +164,10 @@ def run(model_name, batch_size=8):
 
     gsm_test, cot_ids, cot_attention, ds_len = input(tokenizer, batch_size=batch_size)
 
-    if tokenizer.pad_token_id is None:
-        if tokenizer.eos_token_id is not None:
-            tokenizer.pad_token_id = tokenizer.eos_token_id
-    else:
-        tokenizer.pad_token_id = 0
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = (
+            tokenizer.eos_token if tokenizer.eos_token is not None else "[PAD]"
+        )
 
     if model.generation_config.pad_token_id is None:
         model.generation_config.pad_token_id = tokenizer.pad_token_id

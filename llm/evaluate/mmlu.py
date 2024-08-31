@@ -79,11 +79,10 @@ def load_model(checkpoint, model_config_kwarg: dict = {}):
     )
     tokenizer = AutoTokenizer.from_pretrained(checkpoint)
 
-    if tokenizer.pad_token_id is None:
-        if tokenizer.eos_token_id is not None:
-            tokenizer.pad_token_id = tokenizer.eos_token_id
-    else:
-        tokenizer.pad_token_id = 0
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = (
+            tokenizer.eos_token if tokenizer.eos_token is not None else "[PAD]"
+        )
 
     if model.generation_config.pad_token_id is None:
         model.generation_config.pad_token_id = tokenizer.pad_token_id
