@@ -19,20 +19,12 @@
 | OLMo-1.7-7B-hf           | 0.2793950075512405  |                     |
 
 
-
-
-
-
 ## Llama models
 
 - Original implementation: `llm/models/llama/meta/model.py`
 - Single node implementation: `llm/models/llama/meta/model_single_node.py`
 
 
-
-
-
-
-
 ## References
-CoT template has been taken from
+CoT template has been taken from:  
+[Chain of Thought Prompting Elicits Reasoning in Large Language Models](https://arxiv.org/abs/2201.11903)

@@ -2,77 +2,80 @@ import re
 
 
 def clean_response(response, final_answer_trigger="therefore"):
+    response_text = " ".join(response.strip().split())
 
-    response_ = response.lower().strip().split("\n")[0]
-
-    first_response = response_.split(final_answer_trigger.lower())
-
-    if len(first_response) > 1:  # final answer trigger found
-        expected = first_response[1].split("\n")[0].strip()[:-1]
+    parts = re.split(final_answer_trigger, response_text, flags=re.IGNORECASE)
+    if len(parts) > 1:
+        expected_text = parts[1].strip()
     else:
-        expected = response_.split("therefore")[-1]
+        parts = re.split("therefore", response_text, flags=re.IGNORECASE)
+        expected_text = parts[1].strip() if len(parts) > 1 else response_text
 
-    expected = expected.replace("$", "").replace(",", "")
+    expected_text = expected_text.replace("$", "").replace(",", "")
 
-    ## TIME
-    if "pm" or "am" in expected:
-        time_match = re.search(r"(\d{1,2}:\d{2} (?:am|pm))", expected, re.IGNORECASE)
+    if "pm" in expected_text.lower() or "am" in expected_text.lower():
+        time_match = re.search(
+            r"(\d{1,2}:\d{2})\s*(am|pm)", expected_text, re.IGNORECASE
+        )
         if time_match:
-            time_str = time_match.group(1)
+            time_str, meridiem = time_match.groups()
+            hours, minutes = map(int, time_str.split(":"))
 
-            time, _ = time_str.split()
-            hours, minutes = map(int, time.split(":"))
-            decimal_minutes = minutes / 60.0
+            if meridiem.lower() == "pm" and hours != 12:
+                hours += 12
+            elif meridiem.lower() == "am" and hours == 12:
+                hours = 0
 
-            time_float = hours + decimal_minutes
-
+            time_float = hours + minutes / 60.0
             return round(time_float, 2)
-    ## TIME
 
-    numbers = re.findall(r"-?\d+\.?\d*", expected)
-
+    numbers = re.findall(r"-?\d+\.?\d*", expected_text)
     parsed_numbers = [float(num) if "." in num else int(num) for num in numbers]
 
-    num_parsed = len(parsed_numbers)
-
-    if num_parsed > 0:
+    if parsed_numbers:
         return parsed_numbers[-1]
     else:
-        exception_candidates = [
+        exception_phrases = [
             "there is no",
             "there are no",
             "there will be no",
             "there will not be",
-            "there will not be",
         ]
+        if any(phrase in expected_text.lower() for phrase in exception_phrases):
+            return 0
 
-        for candidate in exception_candidates:
-            if candidate in expected:
-                return 0
-
-        cle = response.split("Q:")[0].split("\n")
-        l = len(cle)
-
-        for i in range(l):
-            if len(cle[l - i - 1]) > 0:
-                x = cle[l - i - 1].lower().split(final_answer_trigger.lower())
-                expected = x[-1].replace("$", "").replace(",", "")
-
-                numbers = re.findall(r"-?\d+\.?\d*", expected)
+        response_before_question = response.split("Q:")[0]
+        lines = response_before_question.strip().split("\n")
+        for line in reversed(lines):
+            line = line.strip()
+            if line:
+                parts = re.split(final_answer_trigger, line, flags=re.IGNORECASE)
+                expected_text = parts[1].strip() if len(parts) > 1 else line
+                expected_text = expected_text.replace("$", "").replace(",", "")
+                numbers = re.findall(r"-?\d+\.?\d*", expected_text)
                 parsed_numbers = [
                     float(num) if "." in num else int(num) for num in numbers
                 ]
-                num_parsed = len(parsed_numbers)
-                if num_parsed > 0:
+                if parsed_numbers:
                     return parsed_numbers[-1]
 
-        return None
+    return None
 
 
-if __name__ is "__main__":
+if __name__ == "__main__":
     final_answer_trigger = "The answer is"
     # final_answer_trigger = "Therefore, the final answer is"
-    response = (
-        "The cost of 1 pencil is $1.50. Therefore, the cost of 5 pencils is $7.50."
-    )
-    print(clean_response(response))  # 7.5
+    # edge cases have been removed since the repo is public
+    test_cases = {
+        "case1": {
+            "response": "Something. Therefore, the final answer is -$1,000.00.",
+            "expected": -1000.0,
+        },
+    }
+
+    for case_name, case_data in test_cases.items():
+        response = case_data["response"]
+        expected = case_data["expected"]
+        result = clean_response(response, final_answer_trigger)
+        is_correct = result == expected
+        print(f"{case_name}: {result} == {expected} --> {is_correct}")
